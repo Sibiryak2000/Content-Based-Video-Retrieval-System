@@ -13,6 +13,7 @@ Thumbs.db
 Desktop.ini
 
 # Large dataset assets (add when R2 pipeline produces them)
+dataset/
 data/
 *.zip
 

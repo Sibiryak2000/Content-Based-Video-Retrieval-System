@@ -1,0 +1,19 @@
+dataset:
+  videos_dir: "dataset"
+  scenes_zip: "dataset/scenes_v3c1_204.zip"
+  scenes_prefix: "scenes_v3c1_204"
+
+output:
+  root: "data/processed"
+  proxies_dir: "data/processed/proxies"
+  keyframes_dir: "data/processed/keyframes"
+  db_path: "data/processed/metadata.db"
+  inventory_report: "data/processed/inventory_report.json"
+
+prototype:
+  sample_video_ids:
+    - "00001"
+    - "00058"
+    - "00122"
+  proxy_height: 270
+  keyframe_strategy: "mid_frame"
