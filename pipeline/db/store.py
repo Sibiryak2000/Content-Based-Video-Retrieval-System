@@ -89,32 +89,110 @@ class MetadataStore:
                 ),
             )
 
+    def _row_to_shot(self, r: sqlite3.Row) -> ShotWithVideo:
+        return ShotWithVideo(
+            shot_id=r["shot_id"],
+            video_id=r["video_id"],
+            shot_index=r["shot_index"],
+            start_frame=r["start_frame"],
+            end_frame=r["end_frame"],
+            keyframe_path=r["keyframe_path"],
+            fps=r["fps"],
+            proxy_path=r["proxy_path"],
+        )
+
+    def _shots_query(self, where: str = "", params: tuple = ()) -> str:
+        return f"""
+            SELECT s.shot_id, s.video_id, s.shot_index, s.start_frame, s.end_frame,
+                   s.keyframe_path, v.fps, v.proxy_path, v.vimeo_description
+            FROM shots s
+            JOIN videos v ON s.video_id = v.video_id
+            {where}
+            ORDER BY s.video_id, s.shot_index
+        """
+
+    def list_shots(
+        self,
+        limit: int,
+        offset: int,
+        video_id: str | None = None,
+        query: str = "",
+    ) -> List[ShotWithVideo]:
+        clauses: List[str] = []
+        params: List[object] = []
+        if video_id:
+            clauses.append("s.video_id = ?")
+            params.append(video_id)
+        if query.strip():
+            q = query.strip()
+            clauses.append("(s.video_id LIKE ? OR v.vimeo_description LIKE ?)")
+            params.extend([f"{q}%", f"%{q}%"])
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = self._shots_query(where) + " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_shot(r) for r in rows]
+
+    def count_shots(self, video_id: str | None = None, query: str = "") -> int:
+        clauses: List[str] = []
+        params: List[object] = []
+        if video_id:
+            clauses.append("s.video_id = ?")
+            params.append(video_id)
+        if query.strip():
+            q = query.strip()
+            clauses.append("(s.video_id LIKE ? OR v.vimeo_description LIKE ?)")
+            params.extend([f"{q}%", f"%{q}%"])
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = f"""
+            SELECT COUNT(*) AS cnt
+            FROM shots s
+            JOIN videos v ON s.video_id = v.video_id
+            {where}
+        """
+        with self.connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+        return int(row["cnt"]) if row else 0
+
+    def search_shots_by_video_id_prefix(self, prefix: str, limit: int) -> List[ShotWithVideo]:
+        return self.list_shots(limit=limit, offset=0, query=prefix)
+
+    @staticmethod
+    def resolve_path(path_str: str | None, repo_root: Path) -> str | None:
+        if not path_str:
+            return None
+        p = Path(path_str)
+        if p.is_absolute():
+            return str(p.resolve())
+        return str((repo_root / p).resolve())
+
+    def to_result_item(self, shot: ShotWithVideo, title: str | None = None) -> dict:
+        return {
+            "video_id": shot.video_id,
+            "shot_id": shot.shot_id,
+            "title": title or shot.video_id,
+            "keyframe_path": self.resolve_path(shot.keyframe_path, self.repo_root),
+            "proxy_path": self.resolve_path(shot.proxy_path, self.repo_root),
+            "start_frame": shot.start_frame,
+            "end_frame": shot.end_frame,
+            "fps": shot.fps,
+            "score": 0.0,
+            "text": None,
+        }
+
+    def count_videos(self) -> int:
+        with self.connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS cnt FROM videos").fetchone()
+        return int(row["cnt"]) if row else 0
+
     def list_shots_for_video(self, video_id: str) -> List[ShotWithVideo]:
         with self.connect() as conn:
             rows = conn.execute(
-                """
-                SELECT s.shot_id, s.video_id, s.shot_index, s.start_frame, s.end_frame,
-                       s.keyframe_path, v.fps, v.proxy_path
-                FROM shots s
-                JOIN videos v ON s.video_id = v.video_id
-                WHERE s.video_id = ?
-                ORDER BY s.shot_index
-                """,
+                self._shots_query("WHERE s.video_id = ?"),
                 (video_id,),
             ).fetchall()
-        return [
-            ShotWithVideo(
-                shot_id=r["shot_id"],
-                video_id=r["video_id"],
-                shot_index=r["shot_index"],
-                start_frame=r["start_frame"],
-                end_frame=r["end_frame"],
-                keyframe_path=r["keyframe_path"],
-                fps=r["fps"],
-                proxy_path=r["proxy_path"],
-            )
-            for r in rows
-        ]
+        return [self._row_to_shot(r) for r in rows]
 
     def log_run(self, config_path: Path, notes: str = "") -> int:
         config_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()[:16]
@@ -140,27 +218,7 @@ class MetadataStore:
     def export_sample_result_items(self, video_id: str, limit: int = 3) -> List[dict]:
         """Export ResultItem-compatible dicts for GUI handoff."""
         shots = self.list_shots_for_video(video_id)[:limit]
-        items = []
-        for s in shots:
-            kf = s.keyframe_path
-            proxy = s.proxy_path
-            if kf:
-                kf = str((self.repo_root / kf).resolve()) if not Path(kf).is_absolute() else kf
-            if proxy:
-                proxy = str((self.repo_root / proxy).resolve()) if not Path(proxy).is_absolute() else proxy
-            items.append({
-                "video_id": s.video_id,
-                "shot_id": s.shot_id,
-                "title": s.video_id,
-                "keyframe_path": kf,
-                "proxy_path": proxy,
-                "start_frame": s.start_frame,
-                "end_frame": s.end_frame,
-                "fps": s.fps,
-                "score": 0.0,
-                "text": None,
-            })
-        return items
+        return [self.to_result_item(s) for s in shots]
 
     @staticmethod
     def make_relative(path: Path, repo_root: Path) -> str:

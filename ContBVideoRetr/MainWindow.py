@@ -1,13 +1,9 @@
-"""Main application window for the Content-Based Video Retrieval GUI shell.
-
-Layout:
-  * Search bar across the top.
-  * A large scrollable grid (4 columns) of video result tiles below.
-Clicking a tile shows a small action menu (Play / Submit to DRES); Play opens
-the clip fullscreen.
-"""
+"""Main application window for the Content-Based Video Retrieval GUI."""
 
 from __future__ import annotations
+
+import sys
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -23,13 +19,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from mock.mock_data import get_mock_results
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from pipeline.config import load_config  # noqa: E402
+
 from models.result_item import ResultItem
+from services.catalog_client import CatalogClient, create_catalog_client
 from services.dres_client import DEFAULT_EVALUATION_ID, MockDresClient
 from widgets.video_player import FullScreenPlayer
 from widgets.video_tile import VideoTile
 
-COLUMNS = 4
+COLUMNS = 8
 
 
 class MainWindow(QMainWindow):
@@ -39,7 +41,12 @@ class MainWindow(QMainWindow):
         self.resize(1280, 820)
         self.setStyleSheet("QMainWindow { background: #0f171f; }")
 
-        self._player = None  # keep a reference so it is not garbage-collected
+        self._config = load_config(REPO_ROOT / "config.yaml")
+        self._catalog: CatalogClient = create_catalog_client(REPO_ROOT / "config.yaml")
+        self._page_size = self._config.gui.page_size
+        self._page_offset = 0
+        self._query = ""
+        self._player = None
         self._dres = MockDresClient()
 
         central = QWidget()
@@ -49,17 +56,19 @@ class MainWindow(QMainWindow):
         root.setSpacing(12)
 
         root.addLayout(self._build_search_bar())
+        root.addLayout(self._build_pagination_bar())
         root.addWidget(self._build_results_area(), stretch=1)
 
-        self.show_results(get_mock_results())
+        self._refresh_results()
 
-    # ----------------------------------------------------------------- UI --
     def _build_search_bar(self) -> QHBoxLayout:
         bar = QHBoxLayout()
         bar.setSpacing(8)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search video content…  (e.g. \"person riding a bicycle\")")
+        self.search_input.setPlaceholderText(
+            "Filter by video ID prefix (e.g. \"00001\") — semantic search in Phase 3"
+        )
         self.search_input.setClearButtonEnabled(True)
         self.search_input.setStyleSheet(
             "QLineEdit { background: #1b2733; color: #e6edf3; border: 1px solid #2f3b48;"
@@ -82,14 +91,12 @@ class MainWindow(QMainWindow):
 
         clear_btn = QPushButton("Clear filters")
         clear_btn.setCursor(Qt.PointingHandCursor)
-        clear_btn.setToolTip("Remove all search filters and show the full result set")
+        clear_btn.clicked.connect(self._clear_filters)
         clear_btn.setStyleSheet(
             "QPushButton { background: transparent; color: #9fb0c0; border: 1px solid #2f3b48;"
             " border-radius: 8px; padding: 10px 16px; font-size: 14px; }"
             "QPushButton:hover { color: #e6edf3; border: 1px solid #1B7BB8; background: #1b2733; }"
-            "QPushButton:pressed { background: #16202b; }"
         )
-        clear_btn.clicked.connect(self._clear_filters)
         bar.addWidget(clear_btn)
 
         task_label = QLabel("DRES task:")
@@ -107,39 +114,89 @@ class MainWindow(QMainWindow):
         bar.addWidget(self.task_input)
         return bar
 
+    def _build_pagination_bar(self) -> QHBoxLayout:
+        bar = QHBoxLayout()
+        self.status_label = QLabel()
+        self.status_label.setStyleSheet("color: #9fb0c0; font-size: 13px;")
+        bar.addWidget(self.status_label, stretch=1)
+
+        btn_style = (
+            "QPushButton { background: #1b2733; color: #e6edf3; border: 1px solid #2f3b48;"
+            " border-radius: 8px; padding: 8px 16px; }"
+            "QPushButton:hover { border: 1px solid #1B7BB8; }"
+            "QPushButton:disabled { color: #5a6b7b; }"
+        )
+        self.prev_btn = QPushButton("Previous")
+        self.prev_btn.setStyleSheet(btn_style)
+        self.prev_btn.clicked.connect(self._prev_page)
+        bar.addWidget(self.prev_btn)
+
+        self.next_btn = QPushButton("Next")
+        self.next_btn.setStyleSheet(btn_style)
+        self.next_btn.clicked.connect(self._next_page)
+        bar.addWidget(self.next_btn)
+        return bar
+
     def _build_results_area(self) -> QScrollArea:
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QScrollArea.NoFrame)
         self.scroll.setStyleSheet(
             "QScrollArea { background: transparent; }"
-            "QScrollBar:vertical { background: #0f171f; width: 12px; margin: 0; }"
+            "QScrollBar:vertical { background: #0f171f; width: 12px; }"
             "QScrollBar::handle:vertical { background: #2f3b48; border-radius: 6px; min-height: 30px; }"
-            "QScrollBar::handle:vertical:hover { background: #3d4b5a; }"
-            "QScrollBar::add-line, QScrollBar::sub-line { height: 0; }"
         )
 
         container = QWidget()
         container.setStyleSheet("background: transparent;")
         self.grid = QGridLayout(container)
         self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setSpacing(12)
-        self.grid.setAlignment(Qt.AlignTop)
-        for c in range(COLUMNS):
-            self.grid.setColumnStretch(c, 1)
+        self.grid.setSpacing(8)
+        self.grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
         self.scroll.setWidget(container)
         return self.scroll
 
-    # ------------------------------------------------------------- logic --
     def _on_search(self):
-        query = self.search_input.text()
-        self.show_results(get_mock_results(query))
+        self._query = self.search_input.text().strip()
+        self._page_offset = 0
+        self._refresh_results()
 
     def _clear_filters(self):
         self.search_input.clear()
-        self.show_results(get_mock_results())
+        self._query = ""
+        self._page_offset = 0
+        self._refresh_results()
         self.search_input.setFocus()
+
+    def _prev_page(self):
+        if self._page_offset <= 0:
+            return
+        self._page_offset = max(0, self._page_offset - self._page_size)
+        self._refresh_results()
+
+    def _next_page(self):
+        total = self._catalog.count_shots(self._query)
+        if self._page_offset + self._page_size >= total:
+            return
+        self._page_offset += self._page_size
+        self._refresh_results()
+
+    def _refresh_results(self):
+        total = self._catalog.count_shots(self._query)
+        items = self._catalog.list_shots(self._page_size, self._page_offset, self._query)
+        self.show_results(items)
+
+        if total == 0:
+            self.status_label.setText("No shots found.")
+        else:
+            start = self._page_offset + 1
+            end = min(self._page_offset + len(items), total)
+            source = self._catalog.source_label
+            self.status_label.setText(f"Showing {start}–{end} of {total} shots  ·  {source}")
+
+        self.prev_btn.setEnabled(self._page_offset > 0)
+        self.next_btn.setEnabled(self._page_offset + self._page_size < total)
 
     def show_results(self, items):
         self._clear_grid()
@@ -172,8 +229,10 @@ class MainWindow(QMainWindow):
             f"Evaluation: <code>{DEFAULT_EVALUATION_ID}</code><br>"
             f"Task: <code>{task_name}</code><br>"
             f"Video ID: <code>{item.video_id}</code><br>"
+            f"Shot: <code>{item.shot_id}</code><br>"
             f"Collection: <code>IVADL</code><br>"
-            f"Start: <code>{item.start_ms} ms</code> &nbsp; End: <code>{item.end_ms} ms</code><br><br>"
+            f"Start: <code>{item.start_ms} ms</code> &nbsp; End: <code>{item.end_ms} ms</code><br>"
+            f"FPS: <code>{item.fps:.3f}</code><br><br>"
             f"<i>Wrong submissions cost 100 points each. Submit only if you are sure.</i>"
         )
         box = QMessageBox(self)

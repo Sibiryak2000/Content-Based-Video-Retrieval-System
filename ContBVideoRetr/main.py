@@ -1,14 +1,17 @@
 """Entry point for the Content-Based Video Retrieval GUI shell.
 
-Run from the ContRetr directory:
+Run from the ContBVideoRetr directory:
     python main.py
 """
 
 import os
 import sys
+from pathlib import Path
 
-# Ensure this directory is importable when launched from elsewhere.
+REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
