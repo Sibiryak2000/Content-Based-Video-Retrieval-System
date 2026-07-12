@@ -35,10 +35,16 @@ class PrototypeConfig:
 
 
 @dataclass
+class GuiConfig:
+    page_size: int = 48
+
+
+@dataclass
 class PipelineConfig:
     dataset: DatasetConfig
     output: OutputConfig
     prototype: PrototypeConfig
+    gui: GuiConfig = field(default_factory=GuiConfig)
     repo_root: Path = REPO_ROOT
 
     def ensure_output_dirs(self) -> None:
@@ -63,6 +69,7 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
     ds = raw["dataset"]
     out = raw["output"]
     proto = raw.get("prototype", {})
+    gui = raw.get("gui", {})
 
     return PipelineConfig(
         dataset=DatasetConfig(
@@ -82,5 +89,6 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
             proxy_height=int(proto.get("proxy_height", 270)),
             keyframe_strategy=str(proto.get("keyframe_strategy", "mid_frame")),
         ),
+        gui=GuiConfig(page_size=int(gui.get("page_size", 48))),
         repo_root=repo_root,
     )

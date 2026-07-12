@@ -17,3 +17,6 @@ prototype:
     - "00122"
   proxy_height: 270
   keyframe_strategy: "mid_frame"
+
+gui:
+  page_size: 48

@@ -120,12 +120,15 @@ Example with non-25 fps (`00058`):
 }
 ```
 
-## R4 integration checklist
+## R4 integration checklist (Phase 2)
 
-- [ ] Load `keyframe_path` in `VideoTile` (replace colored placeholders)
-- [ ] Point catalog client at `metadata.db` or R3 search API
-- [ ] Seek player to `start_ms`, stop at `end_ms` on `proxy_path`
-- [ ] Pass probed `fps` through to DRES submit dialog
+- [x] Load `keyframe_path` in `VideoTile` (placeholder fallback when asset missing)
+- [x] Catalog client reads `metadata.db` via `SqliteCatalogClient` (`create_catalog_client`)
+- [x] Seek player to `start_ms`, stop at `end_ms` on `proxy_path`
+- [x] Pass probed `fps` through to DRES submit dialog
+- [x] Pagination (`gui.page_size`, default 48) for large shot counts
+- [x] Filter by `video_id` prefix; Clear filters resets browse
+- [x] Mock fallback when DB absent or empty
 
 ## R3 integration checklist
 

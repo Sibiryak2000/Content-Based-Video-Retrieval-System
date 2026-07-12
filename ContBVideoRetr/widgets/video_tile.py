@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
 
 from models.result_item import ResultItem
 
-_THUMB_W = 280
-_THUMB_H = 180
+_THUMB_W = 120
+_THUMB_H = 75
 
 _PALETTE = [
     "#1B7BB8", "#0B2545", "#1E7F4F", "#8A4FBE", "#B8551B",
@@ -41,7 +41,7 @@ def _placeholder_pixmap(item: ResultItem) -> QPixmap:
     # central play triangle
     painter.setBrush(QColor(255, 255, 255, 210))
     painter.setPen(Qt.NoPen)
-    cx, cy, s = _THUMB_W / 2, _THUMB_H / 2 - 10, 26
+    cx, cy, s = _THUMB_W / 2, _THUMB_H / 2 - 5, 13
     triangle = QPolygonF([
         QPointF(cx - s * 0.5, cy - s),
         QPointF(cx - s * 0.5, cy + s),
@@ -51,7 +51,7 @@ def _placeholder_pixmap(item: ResultItem) -> QPixmap:
 
     # caption
     painter.setPen(QColor("white"))
-    f = QFont("Segoe UI", 9)
+    f = QFont("Segoe UI", 7)
     painter.setFont(f)
     painter.drawText(
         pm.rect().adjusted(8, 0, -8, -10),
@@ -71,37 +71,43 @@ class VideoTile(QFrame):
         self.item = item
         self.setObjectName("VideoTile")
         self.setCursor(Qt.PointingHandCursor)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setStyleSheet(
             "#VideoTile { background: #16202b; border: 1px solid #26313d;"
-            " border-radius: 8px; }"
+            " border-radius: 6px; }"
             "#VideoTile:hover { border: 1px solid #1B7BB8; background: #1b2733; }"
         )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(4)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
 
         self.thumb = QLabel()
         self.thumb.setAlignment(Qt.AlignCenter)
         self.thumb.setScaledContents(True)
-        self.thumb.setFixedHeight(_THUMB_H)
+        self.thumb.setFixedSize(_THUMB_W, _THUMB_H)
         self._set_thumbnail()
         layout.addWidget(self.thumb)
 
-        caption = QLabel(item.display_title)
-        caption.setStyleSheet("color: #cdd8e3; font-size: 12px; padding: 2px;")
+        caption = QLabel(
+            f"{item.video_id} · frames {item.start_frame}–{item.end_frame}"
+        )
+        caption.setStyleSheet("color: #cdd8e3; font-size: 10px; padding: 1px;")
         caption.setWordWrap(True)
         caption.setAlignment(Qt.AlignLeft)
         layout.addWidget(caption)
 
     def _set_thumbnail(self):
-        if self.item.keyframe_path and os.path.isfile(self.item.keyframe_path):
-            pm = QPixmap(self.item.keyframe_path)
+        path = self.item.keyframe_path
+        if path and os.path.isfile(path):
+            pm = QPixmap(path)
             if not pm.isNull():
                 self.thumb.setPixmap(pm)
                 return
+        # Broken or missing asset — colored placeholder (no crash)
         self.thumb.setPixmap(_placeholder_pixmap(self.item))
+        if path:
+            self.thumb.setToolTip(f"Keyframe missing:\n{path}")
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
