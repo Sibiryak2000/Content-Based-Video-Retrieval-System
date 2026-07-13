@@ -20,3 +20,11 @@ prototype:
 
 gui:
   page_size: 48
+
+dres:
+  base_url: "https://vbs.videobrowsing.org"
+  username: ""       # fill in / use DRES_USERNAME env var
+  password: ""        # fill in / use DRES_PASSWORD env var
+  evaluation_id: "IVADL2026"
+  verify_ssl: true
+  timeout_s: 10.0
