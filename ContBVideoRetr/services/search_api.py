@@ -1,7 +1,4 @@
-"""R3 — internal search-service API contract.
-
-The GUI (R4) depends only on SearchService — browse-only or FAISS-backed.
-"""
+"""R3 — internal search-service API contract."""
 
 from __future__ import annotations
 
@@ -34,8 +31,6 @@ class SearchService(Protocol):
 
 
 class BrowseOnlySearchService:
-    """Prefix filter on catalog when FAISS index is not available."""
-
     def __init__(self, catalog: CatalogClient | None = None):
         self._catalog = catalog or create_catalog_client()
 
@@ -50,8 +45,7 @@ class BrowseOnlySearchService:
         mode = "browse" if not query.strip() else "prefix_filter"
         return SearchResponse(
             items=items, total=total, page_size=limit, offset=offset,
-            query=query, latency_ms=(time.perf_counter() - t0) * 1000,
-            mode=mode,
+            query=query, latency_ms=(time.perf_counter() - t0) * 1000, mode=mode,
         )
 
     def list_all(self, limit: int = 48, offset: int = 0) -> SearchResponse:
@@ -60,9 +54,7 @@ class BrowseOnlySearchService:
     def similarity_query(
         self, shot_id: str, limit: int = 48, offset: int = 0
     ) -> SearchResponse:
-        raise NotImplementedError(
-            "Similarity search requires the FAISS index."
-        )
+        raise NotImplementedError("Similarity search requires the FAISS index.")
 
 
 def create_search_service() -> SearchService:

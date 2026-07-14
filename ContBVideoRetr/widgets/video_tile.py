@@ -63,9 +63,9 @@ def _placeholder_pixmap(item: ResultItem) -> QPixmap:
 
 
 class VideoTile(QFrame):
-    playRequested = Signal(object)       # emits ResultItem
-    submitRequested = Signal(object)     # emits ResultItem
-    similarityRequested = Signal(object)  # emits ResultItem
+    playRequested = Signal(object)
+    submitRequested = Signal(object)
+    similarityRequested = Signal(object)
 
     def __init__(self, item: ResultItem, parent=None):
         super().__init__(parent)
@@ -134,9 +134,7 @@ class VideoTile(QFrame):
         menu.addAction(submit_action)
 
         similar_action = QAction("\u2248  More like this", self)
-        similar_action.triggered.connect(
-            lambda: self.similarityRequested.emit(self.item)
-        )
+        similar_action.triggered.connect(lambda: self.similarityRequested.emit(self.item))
         menu.addAction(similar_action)
 
         menu.exec(global_pos)

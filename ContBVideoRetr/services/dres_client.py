@@ -1,9 +1,4 @@
-"""DRES submission client (mock for Phase 1, HTTP-ready for Phase 4).
-
-The assignment requires submit payloads with:
-  evaluationId, task name, media item (video ID without extension),
-  collection name "IVADL", start/end time in milliseconds.
-"""
+"""DRES submission client (mock + shared payload contract)."""
 
 from __future__ import annotations
 
@@ -61,12 +56,18 @@ class DresSubmitResult:
 
 
 class DresClient(Protocol):
+    is_live: bool
+    status_label: str
+
     def submit(self, item: ResultItem, task_name: str,
                evaluation_id: str = DEFAULT_EVALUATION_ID) -> DresSubmitResult: ...
 
 
 class MockDresClient:
-    """Logs submissions locally; replace with OpenAPI-generated client later."""
+    is_live: bool = False
+
+    def __init__(self, status_label: str = "mock (no credentials)"):
+        self.status_label = status_label
 
     def submit(self, item: ResultItem, task_name: str,
                evaluation_id: str = DEFAULT_EVALUATION_ID) -> DresSubmitResult:
@@ -82,7 +83,7 @@ class MockDresClient:
             message=(
                 f"Mock submission accepted for task '{task_name}'.\n"
                 f"Video: {payload.video_id}  "
-                f"({payload.start_ms}–{payload.end_ms} ms)"
+                f"({payload.start_ms}-{payload.end_ms} ms)"
             ),
             payload=payload,
         )

@@ -188,8 +188,7 @@ class MetadataStore:
             "text": text,
         }
 
-    def get_shots_by_ids(self, shot_ids: list[str]) -> list[ShotWithVideo]:
-        """Fetch shots preserving the order of shot_ids."""
+    def get_shots_by_ids(self, shot_ids: list[str]) -> List[ShotWithVideo]:
         if not shot_ids:
             return []
         placeholders = ",".join("?" for _ in shot_ids)

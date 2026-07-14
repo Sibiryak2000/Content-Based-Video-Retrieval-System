@@ -1,4 +1,4 @@
-"""Phase 3 joint verification — semantic search smoke test."""
+"""Verify Phase 3 semantic search service (browse + text query)."""
 
 from __future__ import annotations
 
@@ -9,39 +9,49 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "ContBVideoRetr"))
 
-from pipeline.config import load_config  # noqa: E402
 from services.faiss_search import faiss_index_available  # noqa: E402
 from services.search_api import create_search_service  # noqa: E402
 
 
 def main() -> int:
-    cfg = load_config(REPO / "config.yaml")
     print("=== Phase 3 search verification ===")
-    print(f"FAISS available: {faiss_index_available(cfg)}")
-
-    search = create_search_service()
-    print(f"Service: {type(search).__name__} — {search.source_label}")
-
-    browse = search.list_all(5, 0)
-    print(f"Browse page: {len(browse.items)} items, total={browse.total}")
-
-    if not faiss_index_available(cfg):
-        print("SKIP semantic tests (no index)")
+    if not faiss_index_available():
+        print("SKIP no FAISS index artifacts")
         return 0
 
-    for query in ("person walking", "ocean water"):
-        resp = search.text_query(query, limit=5, offset=0)
-        print(f"\nQuery: {query!r} ({resp.latency_ms:.0f} ms)")
-        for item in resp.items:
-            print(f"  {item.shot_id}  score={item.score:.3f}  {item.video_id}")
+    failed = 0
+    svc = create_search_service()
+    print(f"Service: {svc.source_label}")
 
-    sim = search.similarity_query("00001_0000", limit=5, offset=0)
-    print(f"\nSimilar to 00001_0000 ({sim.latency_ms:.0f} ms):")
-    for item in sim.items:
-        print(f"  {item.shot_id}  score={item.score:.3f}")
+    browse = svc.list_all(limit=10, offset=0)
+    if browse.total <= 0 or not browse.items:
+        print("FAIL browse returned no items")
+        failed += 1
+    else:
+        print(f"OK browse: {len(browse.items)} items, total={browse.total}")
 
-    print("\n=== Done ===")
-    return 0
+    resp = svc.text_query("person walking outdoors", limit=5, offset=0)
+    if not resp.items:
+        print("FAIL semantic query returned no items")
+        failed += 1
+    else:
+        top = resp.items[0]
+        print(
+            f"OK semantic: top={top.shot_id} score={top.score:.3f} "
+            f"latency={resp.latency_ms:.0f}ms"
+        )
+
+    if browse.items:
+        seed = browse.items[0].shot_id
+        sim = svc.similarity_query(seed, limit=5, offset=0)
+        if not sim.items:
+            print(f"FAIL similarity from {seed}")
+            failed += 1
+        else:
+            print(f"OK similarity: {len(sim.items)} hits from {seed}")
+
+    print("=== Done ===")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
