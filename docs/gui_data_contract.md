@@ -130,8 +130,36 @@ Example with non-25 fps (`00058`):
 - [x] Filter by `video_id` prefix; Clear filters resets browse
 - [x] Mock fallback when DB absent or empty
 
+## R4 integration checklist (Phase 3)
+
+- [x] `create_search_service()` — FAISS semantic search when index present
+- [x] Natural-language text query in search bar
+- [x] **More like this** similarity search from tile context menu
+- [x] Similarity score shown on tiles when `score > 0`
+- [x] Browse fallback when FAISS artifacts missing
+
+## R4 integration checklist (Phase 4 — DRES)
+
+- [x] `create_dres_client()` instead of hardcoded `MockDresClient()`
+- [x] DRES connection status label (`connected` / `mock (no credentials)` / `mock (server unreachable)`)
+- [x] **Reconnect DRES** button
+- [x] Submit uses `evaluation_id` from `DresSettings` / `DRES_EVALUATION_ID`
+- [x] Confirmation dialog shows ms range, fps, evaluation id, live/mock mode
+- [x] Optional VQA answer field → DRES `text` in payload
+- [x] Error dialog on failed submit (no crash)
+- [x] Double-submit guard while request in flight
+
+## DRES payload verification
+
+Run `python scripts/verify_dres_payload.py` before live evaluation.
+
+| Video | Shot 0 end ms |
+|-------|---------------|
+| `00001` | 6080 |
+| `00058` | 10176 |
+
 ## R3 integration checklist
 
-- [ ] Expose `list_shots(video_id)` / text search over index (Phase 3)
-- [ ] Resolve relative paths against repo root or config `output.root`
-- [ ] Map `video_id` to DRES collection `"IVADL"`
+- [x] `HttpDresClient` — auto-login before submit, retry once on 401
+- [x] `create_dres_client()` factory with mock fallback
+- [ ] Expose HTTP search microservice (deferred — direct Python clients sufficient)

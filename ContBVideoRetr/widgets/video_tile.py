@@ -63,8 +63,9 @@ def _placeholder_pixmap(item: ResultItem) -> QPixmap:
 
 
 class VideoTile(QFrame):
-    playRequested = Signal(object)    # emits ResultItem
-    submitRequested = Signal(object)  # emits ResultItem
+    playRequested = Signal(object)
+    submitRequested = Signal(object)
+    similarityRequested = Signal(object)
 
     def __init__(self, item: ResultItem, parent=None):
         super().__init__(parent)
@@ -89,9 +90,11 @@ class VideoTile(QFrame):
         self._set_thumbnail()
         layout.addWidget(self.thumb)
 
-        caption = QLabel(
-            f"{item.video_id} · frames {item.start_frame}–{item.end_frame}"
-        )
+        if item.score > 0:
+            caption_text = f"{item.video_id} · score {item.score:.2f}"
+        else:
+            caption_text = f"{item.video_id} · frames {item.start_frame}–{item.end_frame}"
+        caption = QLabel(caption_text)
         caption.setStyleSheet("color: #cdd8e3; font-size: 10px; padding: 1px;")
         caption.setWordWrap(True)
         caption.setAlignment(Qt.AlignLeft)
@@ -129,5 +132,9 @@ class VideoTile(QFrame):
         submit_action = QAction("\u21E9  Submit to DRES", self)
         submit_action.triggered.connect(lambda: self.submitRequested.emit(self.item))
         menu.addAction(submit_action)
+
+        similar_action = QAction("\u2248  More like this", self)
+        similar_action.triggered.connect(lambda: self.similarityRequested.emit(self.item))
+        menu.addAction(similar_action)
 
         menu.exec(global_pos)
