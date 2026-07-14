@@ -35,3 +35,14 @@ def validate_keyframe_readable(jpeg_path: Path) -> bool:
         return True
     except Exception:
         return False
+
+
+def is_placeholder_keyframe(jpeg_path: Path) -> bool:
+    """Detect gray placeholder JPEGs written for corrupt video segments."""
+    try:
+        arr = np.asarray(Image.open(jpeg_path).convert("RGB"), dtype=np.float32)
+    except Exception:
+        return True
+    if arr.std() < 5.0 and arr.mean() < 60.0:
+        return True
+    return False

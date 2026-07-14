@@ -26,8 +26,8 @@ if str(REPO_ROOT) not in sys.path:
 from pipeline.config import load_config  # noqa: E402
 
 from models.result_item import ResultItem
-from services.catalog_client import CatalogClient, create_catalog_client
 from services.dres_client import DEFAULT_EVALUATION_ID, MockDresClient
+from services.search_api import SearchService, create_search_service
 from widgets.video_player import FullScreenPlayer
 from widgets.video_tile import VideoTile
 
@@ -42,10 +42,13 @@ class MainWindow(QMainWindow):
         self.setStyleSheet("QMainWindow { background: #0f171f; }")
 
         self._config = load_config(REPO_ROOT / "config.yaml")
-        self._catalog: CatalogClient = create_catalog_client(REPO_ROOT / "config.yaml")
+        self._search: SearchService = create_search_service()
         self._page_size = self._config.gui.page_size
         self._page_offset = 0
         self._query = ""
+        self._similarity_shot_id: str | None = None
+        self._last_latency_ms = 0.0
+        self._last_mode = "browse"
         self._player = None
         self._dres = MockDresClient()
 
@@ -67,7 +70,7 @@ class MainWindow(QMainWindow):
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(
-            "Filter by video ID prefix (e.g. \"00001\") — semantic search in Phase 3"
+            "Natural-language search (e.g. \"person walking on beach\") — leave empty to browse"
         )
         self.search_input.setClearButtonEnabled(True)
         self.search_input.setStyleSheet(
@@ -159,12 +162,14 @@ class MainWindow(QMainWindow):
 
     def _on_search(self):
         self._query = self.search_input.text().strip()
+        self._similarity_shot_id = None
         self._page_offset = 0
         self._refresh_results()
 
     def _clear_filters(self):
         self.search_input.clear()
         self._query = ""
+        self._similarity_shot_id = None
         self._page_offset = 0
         self._refresh_results()
         self.search_input.setFocus()
@@ -176,24 +181,47 @@ class MainWindow(QMainWindow):
         self._refresh_results()
 
     def _next_page(self):
-        total = self._catalog.count_shots(self._query)
-        if self._page_offset + self._page_size >= total:
+        resp = self._fetch_page()
+        if self._page_offset + self._page_size >= resp.total:
             return
         self._page_offset += self._page_size
         self._refresh_results()
 
-    def _refresh_results(self):
-        total = self._catalog.count_shots(self._query)
-        items = self._catalog.list_shots(self._page_size, self._page_offset, self._query)
-        self.show_results(items)
+    def _fetch_page(self):
+        if self._similarity_shot_id:
+            return self._search.similarity_query(
+                self._similarity_shot_id, self._page_size, self._page_offset
+            )
+        return self._search.text_query(
+            self._query, self._page_size, self._page_offset
+        )
 
+    def _refresh_results(self):
+        resp = self._fetch_page()
+        self._last_latency_ms = resp.latency_ms
+        self._last_mode = resp.mode
+        self.show_results(resp.items)
+
+        total = resp.total
         if total == 0:
             self.status_label.setText("No shots found.")
         else:
             start = self._page_offset + 1
-            end = min(self._page_offset + len(items), total)
-            source = self._catalog.source_label
-            self.status_label.setText(f"Showing {start}–{end} of {total} shots  ·  {source}")
+            end = min(self._page_offset + len(resp.items), total)
+            source = self._search.source_label
+            mode = self._last_mode
+            if self._similarity_shot_id:
+                mode = f"similar to {self._similarity_shot_id}"
+            elif self._query:
+                mode = "semantic" if "FAISS" in source else "filter"
+            latency = (
+                f"  ·  {self._last_latency_ms:.0f} ms"
+                if self._last_latency_ms > 0 and (self._query or self._similarity_shot_id)
+                else ""
+            )
+            self.status_label.setText(
+                f"Showing {start}–{end} of {total}  ·  {mode}  ·  {source}{latency}"
+            )
 
         self.prev_btn.setEnabled(self._page_offset > 0)
         self.next_btn.setEnabled(self._page_offset + self._page_size < total)
@@ -204,8 +232,16 @@ class MainWindow(QMainWindow):
             tile = VideoTile(item)
             tile.playRequested.connect(self.open_player)
             tile.submitRequested.connect(self.submit_to_dres)
+            tile.similarityRequested.connect(self._on_similarity)
             row, col = divmod(i, COLUMNS)
             self.grid.addWidget(tile, row, col)
+
+    def _on_similarity(self, item: ResultItem):
+        self._similarity_shot_id = item.shot_id
+        self._query = ""
+        self.search_input.clear()
+        self._page_offset = 0
+        self._refresh_results()
 
     def _clear_grid(self):
         while self.grid.count():

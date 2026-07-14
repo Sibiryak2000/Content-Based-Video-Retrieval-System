@@ -130,8 +130,19 @@ Example with non-25 fps (`00058`):
 - [x] Filter by `video_id` prefix; Clear filters resets browse
 - [x] Mock fallback when DB absent or empty
 
-## R3 integration checklist
+## R3 integration checklist (Phase 3)
 
-- [ ] Expose `list_shots(video_id)` / text search over index (Phase 3)
-- [ ] Resolve relative paths against repo root or config `output.root`
-- [ ] Map `video_id` to DRES collection `"IVADL"`
+- [x] `SearchService` with `text_query()` over FAISS + CLIP
+- [x] `similarity_query(shot_id)` for nearest-neighbor retrieval
+- [x] Hydrate search hits via `MetadataStore.get_shots_by_ids()` + `to_result_item(score=…)`
+- [x] Resolve relative paths against repo root
+- [x] Map `video_id` to DRES collection `"IVADL"`
+
+## R4 integration checklist (Phase 3)
+
+- [x] MainWindow uses `create_search_service()` (not direct catalog for results)
+- [x] Semantic text search with score-ranked tiles
+- [x] **More like this** → similarity search
+- [x] Search latency in status bar
+- [x] Browse fallback when index missing
+- [ ] Real DRES HTTP submit (Phase 4)
