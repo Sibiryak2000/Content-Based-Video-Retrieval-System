@@ -9,6 +9,14 @@ output:
   keyframes_dir: "data/processed/keyframes"
   db_path: "data/processed/metadata.db"
   inventory_report: "data/processed/inventory_report.json"
+  embeddings_path: "data/processed/embeddings.npy"
+  faiss_index: "data/processed/faiss.index"
+  faiss_id_map: "data/processed/faiss_id_map.json"
+  embedding_manifest: "data/processed/embedding_manifest.json"
+
+embedding:
+  batch_size: 32
+  device: "cpu"
 
 prototype:
   sample_video_ids:

@@ -25,6 +25,16 @@ class OutputConfig:
     keyframes_dir: Path
     db_path: Path
     inventory_report: Path
+    embeddings_path: Path
+    faiss_index: Path
+    faiss_id_map: Path
+    embedding_manifest: Path
+
+
+@dataclass
+class EmbeddingRunConfig:
+    batch_size: int = 32
+    device: str = "cpu"
 
 
 @dataclass
@@ -44,6 +54,7 @@ class PipelineConfig:
     dataset: DatasetConfig
     output: OutputConfig
     prototype: PrototypeConfig
+    embedding: EmbeddingRunConfig = field(default_factory=EmbeddingRunConfig)
     gui: GuiConfig = field(default_factory=GuiConfig)
     repo_root: Path = REPO_ROOT
 
@@ -70,6 +81,7 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
     out = raw["output"]
     proto = raw.get("prototype", {})
     gui = raw.get("gui", {})
+    emb = raw.get("embedding", {})
 
     return PipelineConfig(
         dataset=DatasetConfig(
@@ -83,11 +95,19 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
             keyframes_dir=_resolve(out["keyframes_dir"], repo_root),
             db_path=_resolve(out["db_path"], repo_root),
             inventory_report=_resolve(out["inventory_report"], repo_root),
+            embeddings_path=_resolve(out["embeddings_path"], repo_root),
+            faiss_index=_resolve(out["faiss_index"], repo_root),
+            faiss_id_map=_resolve(out["faiss_id_map"], repo_root),
+            embedding_manifest=_resolve(out["embedding_manifest"], repo_root),
         ),
         prototype=PrototypeConfig(
             sample_video_ids=list(proto.get("sample_video_ids", [])),
             proxy_height=int(proto.get("proxy_height", 270)),
             keyframe_strategy=str(proto.get("keyframe_strategy", "mid_frame")),
+        ),
+        embedding=EmbeddingRunConfig(
+            batch_size=int(emb.get("batch_size", 32)),
+            device=str(emb.get("device", "cpu")),
         ),
         gui=GuiConfig(page_size=int(gui.get("page_size", 48))),
         repo_root=repo_root,
