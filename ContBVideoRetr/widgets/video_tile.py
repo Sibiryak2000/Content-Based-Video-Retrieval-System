@@ -160,4 +160,8 @@ class VideoTile(QFrame):
         submit_action.triggered.connect(lambda: self.submitRequested.emit(self.item))
         menu.addAction(submit_action)
 
+        similar_action = QAction("\u2248  More like this", self)
+        similar_action.triggered.connect(lambda: self.similarityRequested.emit(self.item))
+        menu.addAction(similar_action)
+
         menu.exec(global_pos)

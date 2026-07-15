@@ -197,6 +197,16 @@ class MetadataStore:
             "text": text,
         }
 
+    def get_shots_by_ids(self, shot_ids: list[str]) -> List[ShotWithVideo]:
+        if not shot_ids:
+            return []
+        placeholders = ",".join("?" for _ in shot_ids)
+        sql = self._shots_query(f"WHERE s.shot_id IN ({placeholders})")
+        with self.connect() as conn:
+            rows = conn.execute(sql, shot_ids).fetchall()
+        by_id = {r["shot_id"]: self._row_to_shot(r) for r in rows}
+        return [by_id[sid] for sid in shot_ids if sid in by_id]
+
     def count_videos(self) -> int:
         with self.connect() as conn:
             row = conn.execute("SELECT COUNT(*) AS cnt FROM videos").fetchone()

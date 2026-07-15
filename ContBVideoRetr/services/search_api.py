@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -38,7 +39,6 @@ class BrowseOnlySearchService:
         return self._catalog.source_label
 
     def text_query(self, query: str, limit: int = 48, offset: int = 0) -> SearchResponse:
-        import time
         t0 = time.perf_counter()
         items = self._catalog.list_shots(limit=limit, offset=offset, query=query)
         total = self._catalog.count_shots(query=query)

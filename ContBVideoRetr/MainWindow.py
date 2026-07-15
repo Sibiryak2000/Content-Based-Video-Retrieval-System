@@ -218,6 +218,14 @@ class MainWindow(QMainWindow):
         lbl.setStyleSheet("color: #9fb0c0; font-size: 13px;")
         return lbl
 
+    def _update_dres_status_label(self) -> None:
+        prefix = "DRES: connected" if self._dres.is_live else f"DRES: {self._dres.status_label}"
+        self.dres_status.setText(prefix)
+
+    def _reconnect_dres(self) -> None:
+        self._dres = create_dres_client()
+        self._update_dres_status_label()
+
     def _build_pagination_bar(self) -> QHBoxLayout:
         bar = QHBoxLayout()
         self.status_label = QLabel()
