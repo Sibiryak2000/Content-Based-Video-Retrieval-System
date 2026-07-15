@@ -167,11 +167,20 @@ class MetadataStore:
             return str(p.resolve())
         return str((repo_root / p).resolve())
 
+    def get_shots_by_ids(self, shot_ids: list[str]) -> List[ShotWithVideo]:
+        if not shot_ids:
+            return []
+        placeholders = ",".join("?" for _ in shot_ids)
+        sql = self._shots_query(f"WHERE s.shot_id IN ({placeholders})")
+        with self.connect() as conn:
+            rows = conn.execute(sql, shot_ids).fetchall()
+        by_id = {r["shot_id"]: self._row_to_shot(r) for r in rows}
+        return [by_id[sid] for sid in shot_ids if sid in by_id]
+
     def to_result_item(
         self,
         shot: ShotWithVideo,
         title: str | None = None,
-        *,
         score: float = 0.0,
         text: str | None = None,
     ) -> dict:

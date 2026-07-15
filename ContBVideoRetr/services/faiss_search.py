@@ -40,6 +40,21 @@ class FaissSearchService:
     def source_label(self) -> str:
         return "semantic search (FAISS + CLIP)"
 
+    @property
+    def vector_count(self) -> int:
+        return len(self._shot_ids)
+
+    def index_status_label(self) -> str:
+        manifest_path = PROCESSED / "embedding_manifest.json"
+        model_short = "CLIP ViT-B/32"
+        if manifest_path.is_file():
+            raw = json.loads(manifest_path.read_text(encoding="utf-8")).get("model", "")
+            if "clip-vit-base-patch32" in raw.lower():
+                model_short = "CLIP ViT-B/32"
+            elif raw:
+                model_short = raw.rsplit("/", 1)[-1]
+        return f"Index: {len(self._shot_ids):,} vectors · {model_short}"
+
     def _ensure_clip(self) -> None:
         if self._clip_model is None:
             device = self._device
@@ -62,7 +77,7 @@ class FaissSearchService:
         self._ensure_clip()
         text_vec = encode_text_query(
             self._clip_model, self._clip_processor, q, self._device
-        ).reshape(1, -1).astype(np.float32)
+        ).numpy().reshape(1, -1).astype(np.float32)
 
         k = min(offset + limit, len(self._shot_ids))
         scores, indices = self._index.search(text_vec, k)
@@ -128,3 +143,12 @@ def faiss_index_available() -> bool:
         (PROCESSED / name).is_file()
         for name in ("faiss.index", "faiss_id_map.json", "embeddings.npy", "metadata.db")
     )
+
+
+def index_status_label() -> str:
+    if not faiss_index_available():
+        return "Index: unavailable (browse-only)"
+    try:
+        return FaissSearchService().index_status_label()
+    except Exception:
+        return "Index: error loading artifacts"

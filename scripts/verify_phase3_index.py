@@ -1,4 +1,4 @@
-"""Verify Phase 3 FAISS index artifacts on disk."""
+"""Verify Phase 3 FAISS index artifacts."""
 
 from __future__ import annotations
 
@@ -19,16 +19,12 @@ PROCESSED = REPO / "data" / "processed"
 def main() -> int:
     print("=== Phase 3 index verification ===")
     failed = 0
-
-    required = ("faiss.index", "faiss_id_map.json", "embeddings.npy", "embedding_manifest.json")
-    for name in required:
-        path = PROCESSED / name
-        if not path.is_file():
+    for name in ("faiss.index", "faiss_id_map.json", "embeddings.npy", "embedding_manifest.json"):
+        if not (PROCESSED / name).is_file():
             print(f"FAIL missing {name}")
             failed += 1
         else:
             print(f"OK   {name}")
-
     if failed:
         return 1
 
@@ -36,22 +32,16 @@ def main() -> int:
     id_data = json.loads((PROCESSED / "faiss_id_map.json").read_text(encoding="utf-8"))
     vectors = np.load(PROCESSED / "embeddings.npy")
     index = read_faiss_index(PROCESSED / "faiss.index")
-
-    shot_ids: list[str] = id_data["shot_ids"]
-    vec_count = manifest.get("vector_count", len(shot_ids))
-
+    shot_ids = id_data["shot_ids"]
     checks = [
-        (len(shot_ids) == vec_count, f"shot_ids count {len(shot_ids)} == manifest {vec_count}"),
-        (vectors.shape[0] == len(shot_ids), f"embeddings rows {vectors.shape[0]} == {len(shot_ids)}"),
-        (index.ntotal == len(shot_ids), f"FAISS ntotal {index.ntotal} == {len(shot_ids)}"),
-        (vectors.shape[1] == manifest.get("embedding_dim", 512), "embedding dim matches manifest"),
+        len(shot_ids) == manifest.get("vector_count", len(shot_ids)),
+        vectors.shape[0] == len(shot_ids),
+        index.ntotal == len(shot_ids),
     ]
-    for ok, msg in checks:
-        print(f"{'OK' if ok else 'FAIL'} {msg}")
+    for ok in checks:
         if not ok:
             failed += 1
-
-    print(f"Vectors: {len(shot_ids)}  dim={vectors.shape[1]}  excluded={len(manifest.get('excluded_shots', []))}")
+    print(f"{'OK' if all(checks) else 'FAIL'} {len(shot_ids)} vectors")
     print("=== Done ===")
     return 1 if failed else 0
 

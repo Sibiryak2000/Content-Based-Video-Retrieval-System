@@ -122,7 +122,6 @@ class HttpDresClient:
 
 
 def create_dres_client():
-    """Factory: real client if credentials configured + reachable, else mock."""
     from services.dres_client import MockDresClient
 
     settings = load_dres_settings()

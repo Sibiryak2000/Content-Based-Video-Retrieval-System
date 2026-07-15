@@ -36,13 +36,13 @@ class BrowseOnlySearchService:
 
     @property
     def source_label(self) -> str:
-        return getattr(self._catalog, "source_label", "catalog browse")
+        return self._catalog.source_label
 
     def text_query(self, query: str, limit: int = 48, offset: int = 0) -> SearchResponse:
         t0 = time.perf_counter()
         items = self._catalog.list_shots(limit=limit, offset=offset, query=query)
         total = self._catalog.count_shots(query=query)
-        mode = "browse" if not query.strip() else "prefix_filter"
+        mode = "filter" if query.strip() else "browse"
         return SearchResponse(
             items=items, total=total, page_size=limit, offset=offset,
             query=query, latency_ms=(time.perf_counter() - t0) * 1000, mode=mode,
@@ -51,10 +51,10 @@ class BrowseOnlySearchService:
     def list_all(self, limit: int = 48, offset: int = 0) -> SearchResponse:
         return self.text_query("", limit, offset)
 
-    def similarity_query(
-        self, shot_id: str, limit: int = 48, offset: int = 0
-    ) -> SearchResponse:
-        raise NotImplementedError("Similarity search requires the FAISS index.")
+    def similarity_query(self, shot_id: str, limit: int = 48, offset: int = 0) -> SearchResponse:
+        raise NotImplementedError(
+            "Similarity search requires the FAISS index."
+        )
 
 
 def create_search_service() -> SearchService:
