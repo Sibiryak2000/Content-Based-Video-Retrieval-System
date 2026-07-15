@@ -1,10 +1,5 @@
-"""R3 — real DRES HTTP client (Phase 1-2: login + evaluation/list only;
-submit() is wired in Phase 4 but implemented now so early end-to-end
-connectivity can be verified per the assignment's warning).
+"""R3 — real DRES HTTP client with session refresh and retry."""
 
-Session-cookie based login, matching the DRES OpenAPI spec
-(https://github.com/dres-dev/DRES/blob/master/doc/oas-client.json).
-"""
 from __future__ import annotations
 
 import logging
@@ -14,11 +9,7 @@ from typing import Optional
 import requests
 
 from models.result_item import ResultItem
-from services.dres_client import (
-    COLLECTION_NAME,
-    DresSubmitPayload,
-    DresSubmitResult,
-)
+from services.dres_client import DresSubmitPayload, DresSubmitResult
 from services.dres_config import DresSettings, load_dres_settings
 
 logger = logging.getLogger(__name__)
@@ -36,8 +27,8 @@ class DresConnectionError(RuntimeError):
 
 
 class HttpDresClient:
-    """Real DRES client. Falls back gracefully — callers should catch
-    DresConnectionError and use MockDresClient if the server is unreachable."""
+    is_live: bool = True
+    status_label: str = "connected"
 
     def __init__(self, settings: Optional[DresSettings] = None):
         self.settings = settings or load_dres_settings()
@@ -62,9 +53,12 @@ class HttpDresClient:
             logger.error("DRES login failed: %s", exc)
             raise DresConnectionError(str(exc)) from exc
 
-    def list_evaluations(self) -> list[EvaluationInfo]:
+    def _ensure_session(self) -> None:
         if not self._session_id:
             self.login()
+
+    def list_evaluations(self) -> list[EvaluationInfo]:
+        self._ensure_session()
         url = f"{self.settings.base_url}/api/v2/client/evaluation/list"
         try:
             resp = self._session.get(
@@ -89,7 +83,6 @@ class HttpDresClient:
 
     def submit(self, item: ResultItem, task_name: str,
                evaluation_id: Optional[str] = None) -> DresSubmitResult:
-        """Phase 4 will finalize retries/logging; core call implemented now."""
         eval_id = evaluation_id or self.settings.evaluation_id
         payload = DresSubmitPayload.from_result(item, task_name, eval_id)
         url = f"{self.settings.base_url}/api/v2/submit/{eval_id}"
@@ -97,34 +90,44 @@ class HttpDresClient:
             "taskId": task_name,
             "answers": [payload.to_api_answer()],
         }]}
-        try:
-            resp = self._session.post(
-                url, json=body,
-                params={"session": self._session_id},
-                timeout=self.settings.timeout_s,
-                verify=self.settings.verify_ssl,
-            )
-            resp.raise_for_status()
-            return DresSubmitResult(
-                ok=True,
-                message=f"DRES accepted submission for '{task_name}': "
-                        f"{payload.video_id} ({payload.start_ms}-{payload.end_ms} ms)",
-                payload=payload,
-            )
-        except requests.RequestException as exc:
-            logger.error("DRES submit failed: %s", exc)
-            return DresSubmitResult(ok=False, message=str(exc), payload=payload)
+
+        for attempt in range(2):
+            self._ensure_session()
+            try:
+                resp = self._session.post(
+                    url, json=body,
+                    params={"session": self._session_id},
+                    timeout=self.settings.timeout_s,
+                    verify=self.settings.verify_ssl,
+                )
+                if resp.status_code == 401 and attempt == 0:
+                    logger.warning("DRES session expired — re-login and retry")
+                    self._session_id = None
+                    continue
+                resp.raise_for_status()
+                logger.info("DRES submit OK task=%s video=%s", task_name, payload.video_id)
+                return DresSubmitResult(
+                    ok=True,
+                    message=(
+                        f"DRES accepted submission for '{task_name}': "
+                        f"{payload.video_id} ({payload.start_ms}-{payload.end_ms} ms)"
+                    ),
+                    payload=payload,
+                )
+            except requests.RequestException as exc:
+                logger.error("DRES submit failed (attempt %d): %s", attempt + 1, exc)
+                if attempt == 1:
+                    return DresSubmitResult(ok=False, message=str(exc), payload=payload)
+        return DresSubmitResult(ok=False, message="DRES submit failed", payload=payload)
 
 
 def create_dres_client():
-    """Factory: real client if credentials configured + reachable, else Mock.
-    Import MockDresClient lazily to avoid a hard dependency loop."""
     from services.dres_client import MockDresClient
 
     settings = load_dres_settings()
     if not settings.username or not settings.password:
         logger.warning("No DRES credentials configured — using MockDresClient.")
-        return MockDresClient()
+        return MockDresClient("mock (no credentials)")
 
     client = HttpDresClient(settings)
     try:
@@ -132,4 +135,4 @@ def create_dres_client():
         return client
     except DresConnectionError:
         logger.warning("DRES unreachable — falling back to MockDresClient.")
-        return MockDresClient()
+        return MockDresClient("mock (server unreachable)")

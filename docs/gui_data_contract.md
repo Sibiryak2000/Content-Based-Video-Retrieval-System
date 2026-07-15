@@ -132,6 +132,32 @@ Example with non-25 fps (`00058`):
 
 ## R3 integration checklist
 
-- [ ] Expose `list_shots(video_id)` / text search over index (Phase 3)
-- [ ] Resolve relative paths against repo root or config `output.root`
-- [ ] Map `video_id` to DRES collection `"IVADL"`
+- [x] `HttpDresClient` — auto-login, 401 retry
+- [x] `create_dres_client()` factory with mock fallback
+- [x] FAISS semantic + similarity via `create_search_service()`
+- [ ] HTTP search microservice (deferred)
+
+## R4 integration checklist (Phase 3)
+
+- [x] `create_search_service()` wired in MainWindow
+- [x] Natural-language text query + similarity ("More like this")
+- [x] Score and rank on semantic/similarity tiles
+
+## R4 integration checklist (Phase 4 — DRES)
+
+- [x] `create_dres_client()` with status label + Reconnect
+- [x] Submit uses `evaluation_id` from settings / dropdown
+- [x] VQA answer field → DRES `text`
+- [x] Confirmation dialog with ms range and live/mock mode
+
+## R4 integration checklist (Phase 5 — eval readiness)
+
+- [x] Async search worker (non-blocking CLIP encode)
+- [x] Index status label + missing-index banner
+- [x] Task type KIS/VQA toggle
+- [x] Evaluation dropdown (live DRES)
+- [x] Golden query rehearsal dropdown
+- [x] Player submit (S) + loop (L) + next (N) shortcuts
+- [x] Copy ms range in submit dialog
+- [x] QSettings persistence for task name / evaluation id
+- [x] Distinct live vs mock success messaging

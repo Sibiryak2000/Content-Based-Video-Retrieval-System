@@ -53,11 +53,18 @@ def run_batch(
     skip_existing: bool = False,
     skip_keyframes: bool = False,
     skip_proxies: bool = False,
+    rebuild_proxies: bool = False,
 ) -> dict:
     config = load_config(config_path)
     config.ensure_output_dirs()
     store = MetadataStore(config.output.db_path, config.repo_root)
     store.init_schema()
+
+    if rebuild_proxies:
+        skip_keyframes = True
+        skip_existing = False
+        if not ffmpeg_available():
+            raise RuntimeError("ffmpeg required for --rebuild-proxies")
 
     processed = skipped = failed = 0
     errors: list[dict] = []
@@ -66,7 +73,7 @@ def run_batch(
     for i, video_id in enumerate(video_ids, start=1):
         try:
             shots = load_shots(video_id, config.dataset.scenes_zip, config.dataset.scenes_prefix)
-            if skip_existing and is_video_complete(store, config, video_id, len(shots)):
+            if skip_existing and not rebuild_proxies and is_video_complete(store, config, video_id, len(shots)):
                 skipped += 1
                 print(f"[{i}/{len(video_ids)}] skip {video_id} (complete)", flush=True)
                 continue
@@ -76,7 +83,7 @@ def run_batch(
                 config, store, video_id,
                 skip_keyframes=skip_keyframes,
                 skip_proxies=skip_proxies,
-                use_ffmpeg=use_ffmpeg,
+                use_ffmpeg=use_ffmpeg if not rebuild_proxies else True,
             )
             processed += 1
             print(f"  done fps={result.fps} shots={result.shot_count}", flush=True)
@@ -85,7 +92,10 @@ def run_batch(
             errors.append({"video_id": video_id, "error": str(exc)})
             print(f"  FAILED {video_id}: {exc}", flush=True)
 
-    run_id = store.log_run(config_path, notes=f"phase2_batch processed={processed} skipped={skipped}")
+    notes = f"phase2_batch processed={processed} skipped={skipped}"
+    if rebuild_proxies:
+        notes += " rebuild_proxies=1"
+    run_id = store.log_run(config_path, notes=notes)
     stats = export_phase2_stats(config_path)
     return {
         "processed": processed,
@@ -123,6 +133,8 @@ def main() -> int:
     parser.add_argument("--skip-existing", action="store_true", help="Skip fully processed videos")
     parser.add_argument("--skip-keyframes", action="store_true")
     parser.add_argument("--skip-proxies", action="store_true")
+    parser.add_argument("--rebuild-proxies", action="store_true",
+                        help="Re-transcode all proxies with ffmpeg (skip keyframes)")
     parser.add_argument("--stats-only", action="store_true", help="Only export phase2_stats.json")
     args = parser.parse_args()
 
@@ -140,6 +152,7 @@ def main() -> int:
         skip_existing=args.skip_existing,
         skip_keyframes=args.skip_keyframes,
         skip_proxies=args.skip_proxies,
+        rebuild_proxies=args.rebuild_proxies,
     )
     print("\n=== Phase 2 batch complete ===")
     print(json.dumps(summary, indent=2))

@@ -18,13 +18,18 @@ def load_and_preprocess(jpeg_path: Path) -> np.ndarray:
     """Load a keyframe JPEG and return a CHW float32 array normalized
     per the CLIP preprocessing stats. Ready for Phase 3 encoder input."""
     cfg = DEFAULT_EMBEDDING_CONFIG
-    img = Image.open(jpeg_path).convert("RGB")
-    img = img.resize((cfg.image_size, cfg.image_size), Image.BICUBIC)
+    img = preprocess_keyframe_pil(Image.open(jpeg_path).convert("RGB"))
     arr = np.asarray(img, dtype=np.float32) / 255.0
     mean = np.array(cfg.mean, dtype=np.float32)
     std = np.array(cfg.std, dtype=np.float32)
     arr = (arr - mean) / std
-    return arr.transpose(2, 0, 1)  # HWC -> CHW
+    return arr.transpose(2, 0, 1)
+
+
+def preprocess_keyframe_pil(img: Image.Image) -> Image.Image:
+    """Resize PIL image to model input size (CLIP 224x224)."""
+    cfg = DEFAULT_EMBEDDING_CONFIG
+    return img.resize((cfg.image_size, cfg.image_size), Image.BICUBIC)
 
 
 def validate_keyframe_readable(jpeg_path: Path) -> bool:
