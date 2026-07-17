@@ -81,6 +81,25 @@ class HttpDresClient:
             logger.error("DRES evaluation/list failed: %s", exc)
             raise DresConnectionError(str(exc)) from exc
 
+    def current_task_name(self, evaluation_id: str) -> Optional[str]:
+        """Fetch the name of the currently running task in this evaluation,
+        or None if no task is running right now."""
+        self._ensure_session()
+        url = f"{self.settings.base_url}/api/v2/client/evaluation/currentTask/{evaluation_id}"
+        try:
+            resp = self._session.get(
+                url,
+                params={"session": self._session_id},
+                timeout=self.settings.timeout_s,
+                verify=self.settings.verify_ssl,
+            )
+            if resp.status_code != 200:
+                return None
+            return resp.json().get("name")
+        except requests.RequestException as exc:
+            logger.warning("DRES current_task_name failed: %s", exc)
+            return None
+
     def submit(self, item: ResultItem, task_name: str,
                evaluation_id: Optional[str] = None) -> DresSubmitResult:
         eval_id = evaluation_id or self.settings.evaluation_id
@@ -115,9 +134,15 @@ class HttpDresClient:
                     payload=payload,
                 )
             except requests.RequestException as exc:
-                logger.error("DRES submit failed (attempt %d): %s", attempt + 1, exc)
+                detail = str(exc)
+                if exc.response is not None:
+                    try:
+                        detail = exc.response.json().get("description", detail)
+                    except ValueError:
+                        pass
+                logger.error("DRES submit failed (attempt %d): %s", attempt + 1, detail)
                 if attempt == 1:
-                    return DresSubmitResult(ok=False, message=str(exc), payload=payload)
+                    return DresSubmitResult(ok=False, message=detail, payload=payload)
         return DresSubmitResult(ok=False, message="DRES submit failed", payload=payload)
 
 

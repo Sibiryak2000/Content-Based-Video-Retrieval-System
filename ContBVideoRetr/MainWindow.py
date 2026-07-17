@@ -30,10 +30,12 @@ if str(REPO_ROOT) not in sys.path:
 from pipeline.config import load_config  # noqa: E402
 
 from models.result_item import ResultItem
+from services.dres_client import submission_confidence_warning
 from services.dres_config import load_dres_settings
 from services.dres_http_client import HttpDresClient, create_dres_client
 from services.faiss_search import faiss_index_available, index_status_label
-from services.search_api import SearchResponse, SearchService, create_search_service
+from services.search_api import SearchResponse, SearchService
+from services.vqa_service import create_vqa_service
 from widgets.video_player import FullScreenPlayer
 from widgets.video_tile import VideoTile
 from workers.search_worker import SearchWorker
@@ -52,7 +54,7 @@ class MainWindow(QMainWindow):
         self._settings = QSettings("IVADL", "ContBVideoRetr")
         self._config = load_config(REPO_ROOT / "config.yaml")
         self._dres_settings = load_dres_settings(REPO_ROOT / "config.yaml")
-        self._search: SearchService = create_search_service()
+        self._search: SearchService = create_vqa_service()
         self._page_size = self._config.gui.page_size
         self._page_offset = 0
         self._query = ""
@@ -154,8 +156,8 @@ class MainWindow(QMainWindow):
 
         row1.addWidget(self._label("Task:"))
         self.task_type_combo = QComboBox()
-        self.task_type_combo.addItems(["KIS", "VQA"])
-        self.task_type_combo.setFixedWidth(56)
+        self.task_type_combo.addItems(["KIS Textual", "KIS Visual", "VQA"])
+        self.task_type_combo.setFixedWidth(90)
         self.task_type_combo.setStyleSheet(self._input_style())
         self.task_type_combo.currentTextChanged.connect(self._on_task_type_changed)
         row1.addWidget(self.task_type_combo)
@@ -166,6 +168,17 @@ class MainWindow(QMainWindow):
         self.task_input.setFixedWidth(90)
         self.task_input.setStyleSheet(self._input_style())
         row1.addWidget(self.task_input)
+
+        sync_task_btn = QPushButton("⟳ Task")
+        sync_task_btn.setCursor(Qt.PointingHandCursor)
+        sync_task_btn.setToolTip("Fetch the currently running DRES task name")
+        sync_task_btn.clicked.connect(self._sync_task_name)
+        sync_task_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #9fb0c0; border: 1px solid #2f3b48;"
+            " border-radius: 6px; padding: 6px 10px; font-size: 12px; }"
+            "QPushButton:hover { color: #e6edf3; border: 1px solid #1B7BB8; }"
+        )
+        row1.addWidget(sync_task_btn)
 
         row1.addWidget(self._label("VQA:"))
         self.vqa_input = QLineEdit()
@@ -179,6 +192,7 @@ class MainWindow(QMainWindow):
         self.eval_combo.setMinimumWidth(100)
         self.eval_combo.setStyleSheet(self._input_style())
         row1.addWidget(self.eval_combo)
+        self.eval_combo.currentIndexChanged.connect(lambda _: self._sync_task_name())
 
         row1.addWidget(self._label("Rehearsal:"))
         self.golden_combo = QComboBox()
@@ -323,9 +337,46 @@ class MainWindow(QMainWindow):
         data = self.eval_combo.currentData()
         return str(data) if data else self._dres_settings.evaluation_id
 
+    def _sync_task_name(self) -> None:
+        """Auto-fill the DRES task field with the currently running task's
+        real name, so submit() always targets an actual active task run
+        instead of an operator-typed guess."""
+        if not hasattr(self._dres, "current_task_name"):
+            return
+        eval_id = self._current_evaluation_id()
+        name = self._dres.current_task_name(eval_id)
+        if name:
+            self.task_input.setText(name)
+            self.task_input.setStyleSheet(self._input_style())
+        else:
+            self.task_input.setStyleSheet(
+                self._input_style() + "QLineEdit { border: 1px solid #e0684a; }"
+            )
+
     def _on_task_type_changed(self, task_type: str) -> None:
         if task_type == "VQA":
             self.vqa_input.setFocus()
+        self._auto_select_evaluation(task_type)
+
+    def _auto_select_evaluation(self, task_type: str) -> None:
+        """Auto-pick the DRES evaluation matching the current task type,
+        using the explicit ID map in config.yaml (dres.evaluations) rather
+        than guessing from the session's display name."""
+        from services.dres_config import resolve_evaluation_id
+
+        key_map = {
+            "KIS Textual": "kis_textual",
+            "KIS Visual": "kis_visual",
+            "VQA": "vqa",
+        }
+        key = key_map.get(task_type)
+        if not key:
+            return
+        target_id = resolve_evaluation_id(self._dres_settings, key)
+        idx = self.eval_combo.findData(target_id)
+        if idx >= 0:
+            self.eval_combo.setCurrentIndex(idx)
+        self._sync_task_name()
 
     def _on_golden_selected(self, index: int) -> None:
         entry = self.golden_combo.itemData(index)
@@ -338,7 +389,7 @@ class MainWindow(QMainWindow):
             if ans and ans != "manual check":
                 self.vqa_input.setText(ans)
         else:
-            self.task_type_combo.setCurrentText("KIS")
+            self.task_type_combo.setCurrentText("KIS Textual")
         self._on_search()
 
     def _update_dres_status_label(self) -> None:
@@ -418,7 +469,7 @@ class MainWindow(QMainWindow):
             self._progress = None
 
     def _apply_response(self, resp: SearchResponse) -> None:
-        show_rank = resp.mode in ("semantic", "similarity")
+        show_rank = resp.mode in ("semantic", "similarity", "hybrid")
         self._last_show_rank = show_rank
         self._last_rank_offset = self._page_offset
         self._populate_grid(resp.items, show_rank, self._page_offset)
@@ -432,8 +483,6 @@ class MainWindow(QMainWindow):
             mode = self._last_mode
             if self._similarity_shot_id:
                 mode = f"similar to {self._similarity_shot_id}"
-            elif self._query:
-                mode = "semantic" if faiss_index_available() else "filter"
             latency = (
                 f"  ·  {self._last_latency_ms:.0f} ms"
                 if self._last_latency_ms > 0 and (self._query or self._similarity_shot_id)
@@ -528,6 +577,12 @@ class MainWindow(QMainWindow):
 
         vqa_text = self.vqa_input.text().strip() or None
         if self.task_type_combo.currentText() == "VQA" and not vqa_text:
+            # Fall back to the auto-generated BLIP answer (Phase 3, R1/R3) if the
+            # operator hasn't typed one manually.
+            vqa_text = item.text
+            if vqa_text:
+                self.vqa_input.setText(vqa_text)
+        if self.task_type_combo.currentText() == "VQA" and not vqa_text:
             QMessageBox.warning(self, "DRES Submit", "VQA tasks require an answer in the VQA field.")
             return
 
@@ -559,6 +614,11 @@ class MainWindow(QMainWindow):
         )
         if vqa_text:
             msg += f"VQA text: <code>{vqa_text}</code><br>"
+
+        confidence_warning = submission_confidence_warning(item)
+        if confidence_warning:
+            msg += f"<br><b style='color:#e0684a'>⚠ {confidence_warning}</b><br>"
+
         msg += (
             f"DRES mode: <code>{mode}</code><br><br>"
             f"<i>Wrong submissions cost 100 points each. Submit only if you are sure.</i>"

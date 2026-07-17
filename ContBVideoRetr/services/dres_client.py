@@ -9,6 +9,15 @@ from typing import Optional, Protocol
 
 from models.result_item import ResultItem
 
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from pipeline.reranker import MIN_SUBMIT_CONFIDENCE, is_confident_match  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "IVADL"
@@ -87,3 +96,20 @@ class MockDresClient:
             ),
             payload=payload,
         )
+
+    def current_task_name(self, evaluation_id: str) -> Optional[str]:
+        return None
+
+def submission_confidence_warning(item: ResultItem, threshold: float = MIN_SUBMIT_CONFIDENCE) -> Optional[str]:
+    """R1/R3 Phase 4 safeguard: DRES penalises a wrong submission by -100
+    points, so a low-similarity match should be flagged (not blocked) before
+    the GUI's confirm-and-submit step. Returns None when the match looks
+    confident enough, or when the item has no retrieval score (pure browse)."""
+    if item.score <= 0:
+        return None
+    if is_confident_match(item.score, threshold):
+        return None
+    return (
+        f"Low match confidence (score={item.score:.2f}). "
+        f"A wrong DRES submission costs 100 points — double-check before submitting."
+    )
