@@ -38,6 +38,7 @@ class ShotWithVideo:
     keyframe_path: Optional[str]
     fps: float
     proxy_path: Optional[str]
+    vimeo_description: Optional[str] = None
 
     @property
     def start_ms(self) -> int:

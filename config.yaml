@@ -34,5 +34,9 @@ dres:
   username: ""       # fill in / use DRES_USERNAME env var
   password: ""        # fill in / use DRES_PASSWORD env var
   evaluation_id: "IVADL2026"
+  evaluations:
+    kis_textual: "b98560ad-91d5-4362-87b0-e852cedae937"   # IVADL 2026 Test - KIS Textual
+    kis_visual: "16d4acd1-4d09-4c47-b1eb-39f7b376b6ac"    # IVADL 2026 Test - KIS Visual
+    vqa: "521b57f1-cb8c-4aa5-a0f1-003be49fc98f"           # IVADL 2026 Test - VQA
   verify_ssl: true
   timeout_s: 10.0

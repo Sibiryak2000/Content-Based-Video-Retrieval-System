@@ -31,30 +31,35 @@ def main() -> int:
             if _run(script) != 0:
                 failed += 1
 
-    print("\n--- mock DRES submit smoke ---")
+    print("\n--- DRES submit smoke (all 3 evaluations) ---")
     sys.path.insert(0, str(REPO))
     sys.path.insert(0, str(REPO / "ContBVideoRetr"))
     from pipeline.config import load_config  # noqa: E402
     from pipeline.db.store import MetadataStore  # noqa: E402
     from services.catalog_client import _dict_to_result_item  # noqa: E402
-    from services.dres_config import load_dres_settings  # noqa: E402
+    from services.dres_config import load_dres_settings, resolve_evaluation_id  # noqa: E402
     from services.dres_http_client import create_dres_client  # noqa: E402
 
     cfg = load_config(REPO / "config.yaml")
-    dres = load_dres_settings(REPO / "config.yaml")
+    dres_settings = load_dres_settings(REPO / "config.yaml")
     store = MetadataStore(cfg.output.db_path, cfg.repo_root)
     client = create_dres_client()
-    for vid, exp_end in {"00001": 6080, "00058": 10176}.items():
-        rows = store.list_shots(1, 0, video_id=vid)
-        if not rows:
-            failed += 1
-            continue
-        item = _dict_to_result_item(store.to_result_item(rows[0]))
-        result = client.submit(item, "phase4_smoke", evaluation_id=dres.evaluation_id)
-        ok = result.ok and result.payload.end_ms == exp_end
-        print(f"{'OK' if ok else 'FAIL'} submit {vid}")
-        if not ok:
-            failed += 1
+
+    task_types = list(dres_settings.evaluations.keys()) if dres_settings.evaluations else [None]
+    for task_type in task_types:
+        eval_id = resolve_evaluation_id(dres_settings, task_type)
+        label = task_type or "default"
+        for vid, exp_end in {"00001": 6080, "00058": 10176}.items():
+            rows = store.list_shots(1, 0, video_id=vid)
+            if not rows:
+                failed += 1
+                continue
+            item = _dict_to_result_item(store.to_result_item(rows[0]))
+            result = client.submit(item, f"phase4_smoke_{label}", evaluation_id=eval_id)
+            ok = result.ok and result.payload.end_ms == exp_end
+            print(f"{'OK' if ok else 'FAIL'} submit {vid} -> {label} ({eval_id})")
+            if not ok:
+                failed += 1
 
     if args.live_dres:
         from services.dres_http_client import HttpDresClient, DresConnectionError  # noqa: E402

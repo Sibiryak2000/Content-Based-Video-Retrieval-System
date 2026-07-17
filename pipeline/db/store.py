@@ -99,6 +99,7 @@ class MetadataStore:
             keyframe_path=r["keyframe_path"],
             fps=r["fps"],
             proxy_path=r["proxy_path"],
+            vimeo_description=r["vimeo_description"],
         )
 
     def _shots_query(self, where: str = "", params: tuple = ()) -> str:
@@ -126,7 +127,7 @@ class MetadataStore:
         if query.strip():
             q = query.strip()
             clauses.append("(s.video_id LIKE ? OR v.vimeo_description LIKE ?)")
-            params.extend([f"{q}%", f"%{q}%"])
+            params.extend([f"%{q}%", f"%{q}%"])
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         sql = self._shots_query(where) + " LIMIT ? OFFSET ?"
         params.extend([limit, offset])
