@@ -31,6 +31,7 @@ is required and the heavy computation happens once, offline (CPU-friendly).
 ## Features
 
 - Text-query search over video content (natural-language → shots/keyframes)
+- VQA answer generation (BLIP) for question-style queries, editable before DRES submission
 - Similarity search ("more like this") and content filtering / browsing
 - Integrated video player for inspecting shots and full videos
 - One-click, guarded submission to DRES (with confirmation safeguards)
